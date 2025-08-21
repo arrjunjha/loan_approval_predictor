@@ -1,0 +1,43 @@
+{
+  "Basic Models_Logistic Regression": {
+    "accuracy": 0.8021077283372365,
+    "f1_score": 0.8529155787641427,
+    "best_params": "N/A"
+  },
+  "Basic Models_SVM": {
+    "accuracy": 0.6276346604215457,
+    "f1_score": 0.7712230215827338,
+    "best_params": "N/A"
+  },
+  "Basic Models_Decision Tree": {
+    "accuracy": 0.9824355971896955,
+    "f1_score": 0.986046511627907,
+    "best_params": "N/A"
+  },
+  "Basic Models_Random Forest": {
+    "accuracy": 0.9730679156908665,
+    "f1_score": 0.9786839666357738,
+    "best_params": "N/A"
+  },
+  "Tuned Models_Random Forest": {
+    "accuracy": 0.9742388758782201,
+    "f1_score": 0.9796296296296296,
+    "best_params": {
+      "max_depth": null,
+      "min_samples_leaf": 2,
+      "min_samples_split": 5,
+      "n_estimators": 50
+    }
+  },
+  "Tuned Models_Decision Tree": {
+    "accuracy": 0.9812646370023419,
+    "f1_score": 0.9850467289719627,
+    "best_params": {
+      "max_depth": null,
+      "min_samples_leaf": 1,
+      "min_samples_split": 5
+    }
+  },
+  "best_model": "Basic Models_Decision Tree",
+  "best_accuracy": 0.9824355971896955
+}
