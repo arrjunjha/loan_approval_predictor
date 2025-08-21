@@ -5,7 +5,6 @@ import joblib
 import json
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # Page config
 st.set_page_config(
@@ -24,12 +23,21 @@ st.markdown("""
         border-left: 4px solid #1f77b4;
         margin: 1rem 0;
     }
+    .model-info h3 {
+        color: #1f77b4;
+        margin-bottom: 0.5rem;
+    }
+    .model-info p {
+        color: #2c3e50;
+        margin: 0.25rem 0;
+    }
     .explanation-box {
         background-color: #f8f9fa;
         padding: 1.5rem;
         border-radius: 0.5rem;
         border: 1px solid #dee2e6;
         margin: 1rem 0;
+        color: #2c3e50;
     }
     .approved-explanation {
         background-color: #d4edda;
@@ -45,6 +53,16 @@ st.markdown("""
         font-size: 1.2rem;
         font-weight: bold;
         color: #1f77b4;
+    }
+    .stSelectbox > div > div > div {
+        color: #2c3e50 !important;
+    }
+    .stNumberInput > div > div > input {
+        color: #2c3e50 !important;
+    }
+    .stSelectbox [data-baseweb="select"] > div {
+        color: #2c3e50 !important;
+        background-color: #ffffff !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -65,6 +83,41 @@ def load_model_and_data():
     except Exception as e:
         st.error(f"Model files not found! Please run index.py first. Error: {e}")
         return None, None, None
+
+def check_business_rules(income_annum, total_assets, loan_amount, cibil_score):
+    """Apply banking business rules before model prediction"""
+    
+    # Rule 1: Zero income check
+    if income_annum <= 0:
+        return (False, "❌ **BUSINESS RULE VIOLATION**", 
+                "Zero annual income detected. Banks cannot approve loans without verified income source.")
+    
+    # Rule 2: Minimum income requirement (20% of loan amount annually)
+    min_income_required = loan_amount * 0.2
+    if income_annum < min_income_required:
+        return (False, "❌ **INSUFFICIENT INCOME**", 
+                f"Annual income (₹{income_annum:,}) is below minimum requirement (₹{min_income_required:,}). "
+                f"Banks require minimum 20% of loan amount as annual income.")
+    
+    # Rule 3: Asset collateral check for high-value loans
+    if total_assets <= 50000 and loan_amount > 2000000:
+        return (False, "❌ **INSUFFICIENT COLLATERAL**", 
+                f"Loan amount (₹{loan_amount:,}) requires substantial asset backing. "
+                f"Current assets (₹{total_assets:,}) insufficient for this loan size.")
+    
+    # Rule 4: Extreme loan-to-income ratio
+    loan_to_income_ratio = loan_amount / income_annum
+    if loan_to_income_ratio > 15:  # More than 15 times annual income
+        return (False, "❌ **EXTREME DEBT BURDEN**", 
+                f"Loan-to-income ratio ({loan_to_income_ratio:.1f}x) exceeds banking limits. "
+                f"Maximum recommended ratio is 10x annual income.")
+    
+    # Rule 5: Very poor credit score
+    if cibil_score < 300:
+        return (False, "❌ **INVALID CREDIT SCORE**", 
+                "CIBIL score cannot be below 300. Please verify your credit score.")
+    
+    return (True, "✅ **BUSINESS RULES PASSED**", "All banking requirements met. Proceeding to AI analysis.")
 
 def generate_loan_explanation(prediction, prob_approved, applicant_data):
     """Generate detailed explanation for loan decision"""
@@ -231,93 +284,9 @@ def display_model_info_header(results):
         <h3 style="color: #1f77b4; margin-bottom: 0.5rem;">🤖 Current Model: {best_model}</h3>
         <p style="color: #2c3e50; margin: 0.25rem 0;"><span style="font-size: 1.1rem; font-weight: bold; color: #1f77b4;">Accuracy:</span> <span style="color: #2c3e50;">{best_accuracy:.4f} ({best_accuracy*100:.2f}%)</span></p>
         <p style="color: #2c3e50; margin: 0.25rem 0;"><span style="font-size: 1.1rem; font-weight: bold; color: #1f77b4;">F1 Score:</span> <span style="color: #2c3e50;">{best_f1:.4f}</span></p>
-        <p style="color: #2c3e50; margin: 0.25rem 0;"><span style="font-size: 1.1rem; font-weight: bold; color: #1f77b4;">Status:</span> <span style="color: #28a745;">Ready for predictions</span></p>
+        <p style="color: #2c3e50; margin: 0.25rem 0;"><span style="font-size: 1.1rem; font-weight: bold; color: #1f77b4;">Status:</span> <span style="color: #28a745;">Ready for predictions + Business Rules Applied</span></p>
     </div>
     """, unsafe_allow_html=True)
-
-
-def display_model_performance(results):
-    """Display comprehensive model performance metrics"""
-    st.header("🏆 Model Performance Dashboard")
-    
-    # Model info header
-    display_model_info_header(results)
-    
-    # Extract data for visualization
-    model_names = []
-    accuracies = []
-    f1_scores = []
-    model_details = []
-    
-    for model_name, metrics in results.items():
-        if model_name not in ['best_model', 'best_accuracy'] and isinstance(metrics, dict):
-            clean_name = model_name.replace('_', ' ').replace('Models ', '').title()
-            model_names.append(clean_name)
-            accuracies.append(metrics['accuracy'])
-            f1_scores.append(metrics['f1_score'])
-            
-            model_details.append({
-                'Model': clean_name,
-                'Accuracy': f"{metrics['accuracy']:.4f}",
-                'F1 Score': f"{metrics['f1_score']:.4f}",
-                'Best Params': str(metrics.get('best_params', 'Default'))[:50] + "..." if len(str(metrics.get('best_params', 'Default'))) > 50 else str(metrics.get('best_params', 'Default'))
-            })
-    
-    # Top metrics summary
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("🥇 Best Model", results['best_model'].replace('_', ' ').title())
-    with col2:
-        st.metric("🎯 Best Accuracy", f"{results['best_accuracy']:.4f}")
-    with col3:
-        best_f1 = max(f1_scores)
-        st.metric("📊 Best F1 Score", f"{best_f1:.4f}")
-    with col4:
-        st.metric("🔬 Models Tested", len(model_names))
-    
-    # Performance visualization
-    st.subheader("📈 Model Comparison Charts")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        fig_acc = px.bar(
-            x=accuracies, 
-            y=model_names, 
-            orientation='h',
-            title="Model Accuracy Comparison",
-            labels={'x': 'Accuracy', 'y': 'Model'},
-            color=accuracies,
-            color_continuous_scale='viridis'
-        )
-        fig_acc.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig_acc, use_container_width=True)
-    
-    with col2:
-        fig_f1 = px.bar(
-            x=f1_scores, 
-            y=model_names, 
-            orientation='h',
-            title="Model F1 Score Comparison",
-            labels={'x': 'F1 Score', 'y': 'Model'},
-            color=f1_scores,
-            color_continuous_scale='plasma'
-        )
-        fig_f1.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig_f1, use_container_width=True)
-    
-    # Detailed results table
-    st.subheader("📋 Detailed Model Results")
-    results_df = pd.DataFrame(model_details)
-    
-    # Highlight best model
-    def highlight_best_model(row):
-        if row['Model'] == results['best_model'].replace('_', ' ').title():
-            return ['background-color: #90EE90'] * len(row)
-        return [''] * len(row)
-    
-    styled_df = results_df.style.apply(highlight_best_model, axis=1)
-    st.dataframe(styled_df, use_container_width=True)
 
 def main():
     st.title("🏦 Loan Approval Prediction System")
@@ -330,248 +299,224 @@ def main():
     # Always show model info at top
     display_model_info_header(results)
     
-    # Sidebar for navigation
-    st.sidebar.title("🔍 Navigation")
-    page = st.sidebar.selectbox("Choose Section", 
-                               ["Loan Prediction", "Model Performance", "About"])
+    st.header("💰 Loan Approval Predictor")
+    st.write("**Enhanced with Banking Business Rules** - Prevents unrealistic approvals")
     
-    # Display current model info in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🤖 Current Model")
-    st.sidebar.info(f"""
-    **Model:** {results['best_model'].replace('_', ' ').title()}
-    
-    **Accuracy:** {results['best_accuracy']:.4f}
-    
-    **Status:** ✅ Ready
-    """)
-    
-    if page == "Loan Prediction":
-        st.header("💰 Loan Approval Predictor")
-        
-        # Input form
-        with st.form("loan_form"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("👤 Personal Information")
-                no_of_dependents = st.number_input("Number of Dependents", min_value=0, max_value=10, value=2)
-                education = st.selectbox("Education Level", ["Not Graduate", "Graduate"], index=1)
-                self_employed = st.selectbox("Employment Type", ["No", "Yes"], index=0)
-                cibil_score = st.number_input("CIBIL Score", min_value=300, max_value=900, value=750)
-            
-            with col2:
-                st.subheader("💰 Financial Information")
-                income_annum = st.number_input("Annual Income (₹)", min_value=0, value=5000000, step=100000)
-                loan_amount = st.number_input("Loan Amount (₹)", min_value=0, value=15000000, step=100000)
-                loan_term = st.number_input("Loan Term (Years)", min_value=1, max_value=30, value=10)
-            
-            st.subheader("🏠 Asset Portfolio")
-            col3, col4 = st.columns(2)
-            
-            with col3:
-                residential_assets = st.number_input("Residential Assets (₹)", min_value=0, value=5000000, step=100000)
-                commercial_assets = st.number_input("Commercial Assets (₹)", min_value=0, value=2000000, step=100000)
-            
-            with col4:
-                luxury_assets = st.number_input("Luxury Assets (₹)", min_value=0, value=10000000, step=100000)
-                bank_assets = st.number_input("Bank Assets (₹)", min_value=0, value=3000000, step=100000)
-            
-            submitted = st.form_submit_button("🔮 Predict Loan Status", type="primary", use_container_width=True)
-            
-            if submitted:
-                # Calculate derived features
-                movable_assets = bank_assets + luxury_assets
-                immovable_assets = residential_assets + commercial_assets
-                
-                # Encode categorical variables
-                education_encoded = 1 if education == "Graduate" else 0
-                self_employed_encoded = 1 if self_employed == "Yes" else 0
-                
-                # Create input DataFrame
-                input_data = pd.DataFrame({
-                    'no_of_dependents': [no_of_dependents],
-                    'education': [education_encoded],
-                    'self_employed': [self_employed_encoded],
-                    'income_annum': [income_annum],
-                    'loan_amount': [loan_amount],
-                    'loan_term': [loan_term],
-                    'cibil_score': [cibil_score],
-                    'Movable_assets': [movable_assets],
-                    'Immovable_assets': [immovable_assets]
-                })
-                
-                # Reorder columns
-                input_data = input_data[feature_names]
-                
-                # Prepare applicant data for explanation
-                applicant_data = {
-                    'no_of_dependents': no_of_dependents,
-                    'education_text': education,
-                    'self_employed_text': self_employed,
-                    'income_annum': income_annum,
-                    'loan_amount': loan_amount,
-                    'loan_term': loan_term,
-                    'cibil_score': cibil_score,
-                    'movable_assets': movable_assets,
-                    'immovable_assets': immovable_assets
-                }
-                
-                # Make prediction
-                try:
-                    prediction = model.predict(input_data)[0]
-                    
-                    # Handle probabilities safely
-                    try:
-                        probabilities = model.predict_proba(input_data)
-                        if len(probabilities) == 2:
-                            prob_rejected, prob_approved = probabilities, probabilities[1]
-                        else:
-                            prob_approved = 0.85 if prediction == 1 else 0.15
-                            prob_rejected = 1 - prob_approved
-                    except:
-                        prob_approved = 0.85 if prediction == 1 else 0.15
-                        prob_rejected = 1 - prob_approved
-                    
-                    # Display prediction results with model info
-                    st.markdown("---")
-                    st.header("🎯 Prediction Results")
-                    
-                    # Model used banner
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(90deg, #1f77b4, #17becf); 
-                                color: white; padding: 1rem; border-radius: 0.5rem; text-align: center; margin-bottom: 1rem;">
-                        <h3>🤖 Prediction Made Using: {results['best_model'].replace('_', ' ').title()}</h3>
-                        <p>Model Accuracy: {results['best_accuracy']:.4f} ({results['best_accuracy']*100:.2f}%) | Trained on 4,269 applications</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Main prediction result
-                    col_res1, col_res2, col_res3, col_res4 = st.columns(4)
-                    
-                    with col_res1:
-                        if prediction == 1:
-                            st.success("✅ **LOAN APPROVED!**")
-                        else:
-                            st.error("❌ **LOAN REJECTED**")
-                    
-                    with col_res2:
-                        st.metric("Approval Probability", f"{prob_approved*100:.1f}%")
-                        st.progress(prob_approved)
-                    
-                    with col_res3:
-                        confidence = max(prob_approved, prob_rejected)
-                        st.metric("Prediction Confidence", f"{confidence*100:.1f}%")
-                    
-                    with col_res4:
-                        st.metric("Model Accuracy", f"{results['best_accuracy']*100:.2f}%")
-                        st.caption(f"Trained on 4,269 records")
-                    
-                    # DETAILED EXPLANATION SECTION
-                    st.subheader("📝 Detailed Decision Explanation")
-                    
-                    explanation = generate_loan_explanation(prediction, prob_approved, applicant_data)
-                    
-                    # Style the explanation box based on approval/rejection
-                    if prediction == 1:
-                        st.markdown(f"""
-                        <div class="explanation-box approved-explanation">
-                            {explanation.replace('**', '<strong>').replace('**', '</strong>').replace('\n', '<br>')}
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div class="explanation-box rejected-explanation">
-                            {explanation.replace('**', '<strong>').replace('**', '</strong>').replace('\n', '<br>')}
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # Financial analysis metrics
-                    st.subheader("📊 Financial Analysis Summary")
-                    
-                    analysis_col1, analysis_col2, analysis_col3, analysis_col4 = st.columns(4)
-                    
-                    loan_to_income = (loan_amount / income_annum) * 100 if income_annum > 0 else 0
-                    total_assets = movable_assets + immovable_assets
-                    asset_to_loan = (total_assets / loan_amount) * 100 if loan_amount > 0 else 0
-                    monthly_emi = loan_amount / (loan_term * 12) if loan_term > 0 else 0
-                    monthly_income = income_annum / 12 if income_annum > 0 else 1
-                    emi_ratio = (monthly_emi / monthly_income) * 100
-                    
-                    with analysis_col1:
-                        st.metric("Loan-to-Income", f"{loan_to_income:.1f}%")
-                        if loan_to_income <= 300:
-                            st.success("✅ Excellent")
-                        elif loan_to_income <= 500:
-                            st.warning("⚡ Moderate")
-                        else:
-                            st.error("⚠️ High Risk")
-                    
-                    with analysis_col2:
-                        st.metric("Asset Coverage", f"{asset_to_loan:.1f}%")
-                        if asset_to_loan >= 200:
-                            st.success("✅ Strong")
-                        elif asset_to_loan >= 100:
-                            st.warning("⚡ Adequate")
-                        else:
-                            st.error("⚠️ Weak")
-                    
-                    with analysis_col3:
-                        st.metric("Monthly EMI", f"₹{monthly_emi:,.0f}")
-                        st.caption(f"EMI Ratio: {emi_ratio:.1f}%")
-                    
-                    with analysis_col4:
-                        st.metric("Total Assets", f"₹{total_assets:,.0f}")
-                        asset_types = sum([
-                            1 if residential_assets > 0 else 0,
-                            1 if commercial_assets > 0 else 0,
-                            1 if luxury_assets > 0 else 0,
-                            1 if bank_assets > 0 else 0
-                        ])
-                        st.caption(f"Diversified: {asset_types}/4 types")
-                
-                except Exception as e:
-                    st.error(f"Prediction error: {str(e)}")
-    
-    elif page == "Model Performance":
-        display_model_performance(results)
-        
-    else:  # About page
-        st.header("ℹ️ About This System")
-        
-        display_model_info_header(results)
-        
+    # Input form
+    with st.form("loan_form"):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("🎯 System Overview")
-            st.write(f"""
-            This system uses the **{results['best_model'].replace('_', ' ').title()}** model, 
-            which achieved **{results['best_accuracy']*100:.2f}% accuracy** through 
-            hyperparameter tuning and cross-validation.
-            
-            The model analyzes 9 key features to make loan approval decisions 
-            with high confidence and provides detailed explanations for each decision.
-            """)
-            
-            st.metric("Current Model Accuracy", f"{results['best_accuracy']*100:.2f}%")
-            st.metric("Model Type", results['best_model'].replace('_', ' ').title())
-            
+            st.subheader("👤 Personal Information")
+            no_of_dependents = st.number_input("Number of Dependents", min_value=0, max_value=10, value=2)
+            education = st.selectbox("Education Level", ["Not Graduate", "Graduate"], index=1)
+            self_employed = st.selectbox("Employment Type", ["No", "Yes"], index=0)
+            cibil_score = st.number_input("CIBIL Score", min_value=300, max_value=900, value=750)
+        
         with col2:
-            st.subheader("🔬 Technical Details")
-            st.write(f"""
-            **Dataset:** 4,269 loan applications
+            st.subheader("💰 Financial Information")
+            income_annum = st.number_input("Annual Income (₹)", min_value=0, value=5000000, step=100000)
+            loan_amount = st.number_input("Loan Amount (₹)", min_value=0, value=15000000, step=100000)
+            loan_term = st.number_input("Loan Term (Years)", min_value=1, max_value=30, value=10)
+        
+        st.subheader("🏠 Asset Portfolio")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            residential_assets = st.number_input("Residential Assets (₹)", min_value=0, value=5000000, step=100000)
+            commercial_assets = st.number_input("Commercial Assets (₹)", min_value=0, value=2000000, step=100000)
+        
+        with col4:
+            luxury_assets = st.number_input("Luxury Assets (₹)", min_value=0, value=10000000, step=100000)
+            bank_assets = st.number_input("Bank Assets (₹)", min_value=0, value=3000000, step=100000)
+        
+        submitted = st.form_submit_button("🔮 Predict Loan Status", type="primary", use_container_width=True)
+        
+        if submitted:
+            # Calculate derived features
+            movable_assets = bank_assets + luxury_assets
+            immovable_assets = residential_assets + commercial_assets
+            total_assets = movable_assets + immovable_assets
             
-            **Features:** {len(feature_names)} engineered variables
+            # STEP 1: CHECK BUSINESS RULES FIRST
+            st.markdown("---")
+            st.subheader("🏛️ Banking Business Rules Check")
             
-            **Models Tested:** 6 different algorithms with hyperparameter tuning
+            rules_passed, rule_status, rule_message = check_business_rules(
+                income_annum, total_assets, loan_amount, cibil_score
+            )
             
-            **Best Model:** {results['best_model'].replace('_', ' ').title()}
+            st.write(f"**{rule_status}**")
+            st.info(rule_message)
             
-            **Validation:** Stratified train/test split with cross-validation
+            if not rules_passed:
+                st.error("**❌ LOAN APPLICATION REJECTED BY BUSINESS RULES**")
+                st.write("**This rejection occurred before AI model analysis due to fundamental banking policy violations.**")
+                
+                # Show what needs to be fixed
+                st.subheader("📋 Required Actions:")
+                if income_annum <= 0:
+                    st.write("• **Provide valid income documentation**")
+                if income_annum < loan_amount * 0.2:
+                    st.write(f"• **Increase annual income to at least ₹{loan_amount * 0.2:,.0f}**")
+                if total_assets <= 50000 and loan_amount > 2000000:
+                    st.write("• **Increase asset base or reduce loan amount**")
+                    
+                st.stop()
             
-            **Optimization:** GridSearchCV for hyperparameter tuning
-            """)
+            # STEP 2: IF BUSINESS RULES PASS, USE AI MODEL
+            st.success("✅ **Business rules passed! Proceeding to AI model analysis...**")
+            
+            # Encode categorical variables
+            education_encoded = 1 if education == "Graduate" else 0
+            self_employed_encoded = 1 if self_employed == "Yes" else 0
+            
+            # Create input DataFrame
+            input_data = pd.DataFrame({
+                'no_of_dependents': [no_of_dependents],
+                'education': [education_encoded],
+                'self_employed': [self_employed_encoded],
+                'income_annum': [income_annum],
+                'loan_amount': [loan_amount],
+                'loan_term': [loan_term],
+                'cibil_score': [cibil_score],
+                'Movable_assets': [movable_assets],
+                'Immovable_assets': [immovable_assets]
+            })
+            
+            # Reorder columns
+            input_data = input_data[feature_names]
+            
+            # Prepare applicant data for explanation
+            applicant_data = {
+                'no_of_dependents': no_of_dependents,
+                'education_text': education,
+                'self_employed_text': self_employed,
+                'income_annum': income_annum,
+                'loan_amount': loan_amount,
+                'loan_term': loan_term,
+                'cibil_score': cibil_score,
+                'movable_assets': movable_assets,
+                'immovable_assets': immovable_assets
+            }
+            
+            # Make prediction
+            try:
+                prediction = model.predict(input_data)[0]
+                
+                # Handle probabilities safely
+                try:
+                    probabilities = model.predict_proba(input_data)[0]
+                    if len(probabilities) == 2:
+                        prob_rejected, prob_approved = probabilities, probabilities[1]
+                    else:
+                        prob_approved = 0.85 if prediction == 1 else 0.15
+                        prob_rejected = 1 - prob_approved
+                except:
+                    prob_approved = 0.85 if prediction == 1 else 0.15
+                    prob_rejected = 1 - prob_approved
+                
+                # Display prediction results with model info
+                st.markdown("---")
+                st.header("🎯 AI Model Prediction Results")
+                
+                # Model used banner
+                st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #1f77b4, #17becf); 
+                            color: white; padding: 1rem; border-radius: 0.5rem; text-align: center; margin-bottom: 1rem;">
+                    <h3>🤖 Prediction Made Using: {results['best_model'].replace('_', ' ').title()}</h3>
+                    <p>Model Accuracy: {results['best_accuracy']:.4f} ({results['best_accuracy']*100:.2f}%) | Enhanced with Business Rules</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Main prediction result
+                col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+                
+                with col_res1:
+                    if prediction == 1:
+                        st.success("✅ **LOAN APPROVED!**")
+                    else:
+                        st.error("❌ **LOAN REJECTED**")
+                
+                with col_res2:
+                    st.metric("Approval Probability", f"{prob_approved*100:.1f}%")
+                    st.progress(prob_approved)
+                
+                with col_res3:
+                    confidence = max(prob_approved, prob_rejected)
+                    st.metric("Prediction Confidence", f"{confidence*100:.1f}%")
+                
+                with col_res4:
+                    st.metric("Model Accuracy", f"{results['best_accuracy']*100:.2f}%")
+                    st.caption(f"Protected by Business Rules")
+                
+                # DETAILED EXPLANATION SECTION
+                st.subheader("📝 Detailed Decision Explanation")
+                
+                explanation = generate_loan_explanation(prediction, prob_approved, applicant_data)
+                
+                # Style the explanation box based on approval/rejection
+                if prediction == 1:
+                    st.markdown(f"""
+                    <div class="explanation-box approved-explanation">
+                        {explanation.replace('**', '<strong>').replace('**', '</strong>').replace('\n', '<br>')}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="explanation-box rejected-explanation">
+                        {explanation.replace('**', '<strong>').replace('**', '</strong>').replace('\n', '<br>')}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Financial analysis metrics
+                st.subheader("📊 Financial Analysis Summary")
+                
+                analysis_col1, analysis_col2, analysis_col3, analysis_col4 = st.columns(4)
+                
+                loan_to_income = (loan_amount / income_annum) * 100 if income_annum > 0 else 0
+                asset_to_loan = (total_assets / loan_amount) * 100 if loan_amount > 0 else 0
+                monthly_emi = loan_amount / (loan_term * 12) if loan_term > 0 else 0
+                monthly_income = income_annum / 12 if income_annum > 0 else 1
+                emi_ratio = (monthly_emi / monthly_income) * 100
+                
+                with analysis_col1:
+                    st.metric("Loan-to-Income", f"{loan_to_income:.1f}%")
+                    if loan_to_income <= 300:
+                        st.success("✅ Excellent")
+                    elif loan_to_income <= 500:
+                        st.warning("⚡ Moderate")
+                    else:
+                        st.error("⚠️ High Risk")
+                
+                with analysis_col2:
+                    st.metric("Asset Coverage", f"{asset_to_loan:.1f}%")
+                    if asset_to_loan >= 200:
+                        st.success("✅ Strong")
+                    elif asset_to_loan >= 100:
+                        st.warning("⚡ Adequate")
+                    else:
+                        st.error("⚠️ Weak")
+                
+                with analysis_col3:
+                    st.metric("Monthly EMI", f"₹{monthly_emi:,.0f}")
+                    st.caption(f"EMI Ratio: {emi_ratio:.1f}%")
+                
+                with analysis_col4:
+                    st.metric("Total Assets", f"₹{total_assets:,.0f}")
+                    asset_types = sum([
+                        1 if residential_assets > 0 else 0,
+                        1 if commercial_assets > 0 else 0,
+                        1 if luxury_assets > 0 else 0,
+                        1 if bank_assets > 0 else 0
+                    ])
+                    st.caption(f"Diversified: {asset_types}/4 types")
+                
+                # Show the enhancement
+                st.info("🛡️ **Enhanced Protection**: This system now includes banking business rules that prevent unrealistic loan approvals, making it suitable for real-world financial applications.")
+            
+            except Exception as e:
+                st.error(f"Error making prediction: {str(e)}")
 
 if __name__ == "__main__":
     main()
