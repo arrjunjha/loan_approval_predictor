@@ -4,7 +4,7 @@
 
 Machine learning system for loan approval prediction with **98.24% accuracy**.
 
-## [🚀 Live Demo](https://loan-approval-model.streamlit.app/)
+## [ Live Demo](https://loan-approval-model.streamlit.app/)
 
 ## Features
 - 98.24% accuracy Decision Tree model
